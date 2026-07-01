@@ -96,7 +96,7 @@ const StoreUpdater = memo<StoreUpdaterProps>(
           storeApi.setState({ messagesInit: true });
         }
       }
-    }, [contextKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [contextKey, context, messages, storeApi]);
 
     // Sync external messages into store
     useEffect(() => {
