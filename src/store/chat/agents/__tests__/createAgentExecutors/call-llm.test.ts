@@ -1753,6 +1753,65 @@ describe('call_llm executor', () => {
       );
     });
 
+    it('should stop with an error state when the stream reports an error without rejecting', async () => {
+      // Given
+      const mockStore = createMockStore();
+      const context = createTestContext();
+      const instruction = createCallLLMInstruction();
+      const state = createInitialState();
+
+      mockStore.dbMessagesMap[context.messageKey] = [];
+
+      vi.mocked(chatService.createAssistantMessageStream).mockImplementation(
+        async (params: any) => {
+          await params.onErrorHandle?.({
+            body: {
+              provider: 'openai',
+            },
+            message: 'Network connection lost',
+            type: ChatErrorType.UnknownChatFetchError,
+          });
+        },
+      );
+
+      // When
+      const result = await executeWithMockContext({
+        executor: 'call_llm',
+        instruction,
+        state,
+        mockStore,
+        context,
+      });
+
+      // Then
+      expect(mockStore.optimisticUpdateMessageError).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          message: 'Network connection lost',
+          type: ChatErrorType.UnknownChatFetchError,
+        }),
+        { operationId: context.operationId },
+      );
+      expect(mockStore.refreshMessages).toHaveBeenCalledWith({
+        agentId: context.agentId,
+        groupId: undefined,
+        threadId: undefined,
+        topicId: context.topicId,
+      });
+      expect(result).toEqual(
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              type: 'error',
+            }),
+          ],
+          newState: expect.objectContaining({
+            status: 'error',
+          }),
+        }),
+      );
+    });
+
     it('should keep normal content and update message error state', async () => {
       // Given
       const mockStore = createMockStore();

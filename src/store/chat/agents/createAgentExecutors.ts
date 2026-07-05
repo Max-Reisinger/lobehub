@@ -459,6 +459,34 @@ export const createAgentExecutors = (context: {
       );
 
       const messages = llmPayload.messages.filter((message) => message.id !== assistantMessageId);
+      let streamError: ChatMessageError | undefined;
+
+      const handleStreamError = async (error: ChatMessageError) => {
+        streamError = error;
+
+        await context.get().optimisticUpdateMessageError(assistantMessageId, error, {
+          operationId: context.operationId,
+        });
+      };
+
+      const toUnknownChatFetchError = (error: unknown): ChatMessageError => {
+        const message = error instanceof Error ? error.message : String(error);
+
+        return {
+          body: { message, traceId },
+          message,
+          type: ChatErrorType.UnknownChatFetchError,
+        };
+      };
+
+      const returnStreamErrorState = async (error: ChatMessageError) => {
+        await context.get().refreshMessages({ agentId, groupId, threadId, topicId });
+
+        return {
+          events: [{ error, type: 'error' as const }],
+          newState: { ...state, status: 'error' as const },
+        };
+      };
 
       try {
         await chatService.createAssistantMessageStream({
@@ -491,9 +519,7 @@ export const createAgentExecutors = (context: {
             };
             const localizedError = localizeError(enrichedError);
 
-            await context.get().optimisticUpdateMessageError(assistantMessageId, localizedError, {
-              operationId: context.operationId,
-            });
+            await handleStreamError(localizedError);
           },
           onFinish: async (
             _content,
@@ -550,22 +576,15 @@ export const createAgentExecutors = (context: {
       } catch (error) {
         if (isAbortError(error, abortController)) throw error;
 
-        const message = error instanceof Error ? error.message : String(error);
-        const streamError: ChatMessageError = {
-          body: { message, traceId },
-          message,
-          type: ChatErrorType.UnknownChatFetchError,
-        };
+        const streamError = toUnknownChatFetchError(error);
 
-        await context.get().optimisticUpdateMessageError(assistantMessageId, streamError, {
-          operationId: context.operationId,
-        });
-        await context.get().refreshMessages({ agentId, groupId, threadId, topicId });
+        await handleStreamError(streamError);
 
-        return {
-          events: [{ error: streamError, type: 'error' as const }],
-          newState: { ...state, status: 'error' as const },
-        };
+        return returnStreamErrorState(streamError);
+      }
+
+      if (streamError) {
+        return returnStreamErrorState(streamError);
       }
 
       const isFunctionCall = handler.getIsFunctionCall();
