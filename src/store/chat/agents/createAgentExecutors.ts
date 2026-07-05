@@ -20,6 +20,7 @@ import { UsageCounter } from '@lobechat/agent-runtime';
 import { countContextTokens, type ToolsEngine } from '@lobechat/context-engine';
 import { chainCompressContext } from '@lobechat/prompts';
 import {
+  ChatErrorType,
   type ChatMessageError,
   type ChatToolPayload,
   type CreateMessageParams,
@@ -297,7 +298,7 @@ export const createAgentExecutors = (context: {
       if (!operation) {
         throw new Error(`Operation not found: ${context.operationId}`);
       }
-      const { subAgentId, groupId, topicId } = operation.context;
+      const { subAgentId, groupId, threadId, topicId } = operation.context;
       const abortController = operation.abortController;
 
       // In group orchestration, subAgentId is the actual responding agent
@@ -459,92 +460,113 @@ export const createAgentExecutors = (context: {
 
       const messages = llmPayload.messages.filter((message) => message.id !== assistantMessageId);
 
-      await chatService.createAssistantMessageStream({
-        abortController,
-        params: {
-          agentId: agentId || undefined,
-          groupId,
-          messages,
-          model: llmPayload.model,
-          provider: llmPayload.provider,
-          resolvedAgentConfig,
-          topicId: topicId ?? undefined,
-          ...agentConfigData.params,
-        },
-        initialContext: runtimeContext?.initialContext,
-        metadata: context.metadata,
-        stepContext: runtimeContext?.stepContext,
-        trace: {
-          traceId,
-          topicId: topicId ?? undefined,
-          traceName: TraceNameMap.Conversation,
-        },
-        onErrorHandle: async (error) => {
-          const enrichedError = {
-            ...error,
-            body: {
-              ...error.body,
-              traceId: traceId ?? error.body?.traceId,
-            },
-          };
-          const localizedError = localizeError(enrichedError);
-
-          await context.get().optimisticUpdateMessageError(assistantMessageId, localizedError, {
-            operationId: context.operationId,
-          });
-        },
-        onFinish: async (
-          _content,
-          { traceId, observationId, toolCalls, reasoning, grounding, usage, speed, type },
-        ) => {
-          void _content;
-
-          if (traceId) {
-            messageService.updateMessage(
-              assistantMessageId,
-              { traceId, observationId: observationId ?? undefined },
-              { agentId, groupId, topicId },
-            );
-          }
-
-          const result = await handler.handleFinish({
+      try {
+        await chatService.createAssistantMessageStream({
+          abortController,
+          params: {
+            agentId: agentId || undefined,
+            groupId,
+            messages,
+            model: llmPayload.model,
+            provider: llmPayload.provider,
+            resolvedAgentConfig,
+            topicId: topicId ?? undefined,
+            ...agentConfigData.params,
+          },
+          initialContext: runtimeContext?.initialContext,
+          metadata: context.metadata,
+          stepContext: runtimeContext?.stepContext,
+          trace: {
             traceId,
-            observationId,
-            toolCalls,
-            reasoning,
-            grounding,
-            usage,
-            speed,
-            type,
-          });
-
-          finalUsage = result.usage;
-          finalToolCalls = result.toolCalls;
-
-          await optimisticUpdateMessageContent(
-            assistantMessageId,
-            result.content,
-            {
-              tools: result.tools,
-              reasoning: result.metadata.reasoning,
-              search: result.metadata.search,
-              imageList: result.metadata.imageList,
-              metadata: {
-                ...result.metadata.usage,
-                ...result.metadata.performance,
-                performance: result.metadata.performance,
-                usage: result.metadata.usage,
-                finishType: result.metadata.finishType,
-                ...(result.metadata.isMultimodal && { isMultimodal: true }),
+            topicId: topicId ?? undefined,
+            traceName: TraceNameMap.Conversation,
+          },
+          onErrorHandle: async (error) => {
+            const enrichedError = {
+              ...error,
+              body: {
+                ...error.body,
+                traceId: traceId ?? error.body?.traceId,
               },
-            },
-            { operationId: context.operationId },
-          );
-        },
-        onMessageHandle: async (chunk) => {
-          handler.handleChunk(chunk as StreamChunk);
-        },
-      });
+            };
+            const localizedError = localizeError(enrichedError);
+
+            await context.get().optimisticUpdateMessageError(assistantMessageId, localizedError, {
+              operationId: context.operationId,
+            });
+          },
+          onFinish: async (
+            _content,
+            { traceId, observationId, toolCalls, reasoning, grounding, usage, speed, type },
+          ) => {
+            void _content;
+
+            if (traceId) {
+              messageService.updateMessage(
+                assistantMessageId,
+                { traceId, observationId: observationId ?? undefined },
+                { agentId, groupId, topicId },
+              );
+            }
+
+            const result = await handler.handleFinish({
+              traceId,
+              observationId,
+              toolCalls,
+              reasoning,
+              grounding,
+              usage,
+              speed,
+              type,
+            });
+
+            finalUsage = result.usage;
+            finalToolCalls = result.toolCalls;
+
+            await optimisticUpdateMessageContent(
+              assistantMessageId,
+              result.content,
+              {
+                tools: result.tools,
+                reasoning: result.metadata.reasoning,
+                search: result.metadata.search,
+                imageList: result.metadata.imageList,
+                metadata: {
+                  ...result.metadata.usage,
+                  ...result.metadata.performance,
+                  performance: result.metadata.performance,
+                  usage: result.metadata.usage,
+                  finishType: result.metadata.finishType,
+                  ...(result.metadata.isMultimodal && { isMultimodal: true }),
+                },
+              },
+              { operationId: context.operationId },
+            );
+          },
+          onMessageHandle: async (chunk) => {
+            handler.handleChunk(chunk as StreamChunk);
+          },
+        });
+      } catch (error) {
+        if (isAbortError(error, abortController)) throw error;
+
+        const message = error instanceof Error ? error.message : String(error);
+        const streamError: ChatMessageError = {
+          body: { message, traceId },
+          message,
+          type: ChatErrorType.UnknownChatFetchError,
+        };
+
+        await context.get().optimisticUpdateMessageError(assistantMessageId, streamError, {
+          operationId: context.operationId,
+        });
+        await context.get().refreshMessages({ agentId, groupId, threadId, topicId });
+
+        return {
+          events: [{ error: streamError, type: 'error' as const }],
+          newState: { ...state, status: 'error' as const },
+        };
+      }
 
       const isFunctionCall = handler.getIsFunctionCall();
       const content = handler.getOutput();

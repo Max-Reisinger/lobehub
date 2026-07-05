@@ -1,7 +1,7 @@
 import { type GeneralAgentCallLLMResultPayload } from '@lobechat/agent-runtime';
 import { LOADING_FLAT } from '@lobechat/const';
 import type { MessageToolCall } from '@lobechat/types';
-import { RequestTrigger } from '@lobechat/types';
+import { ChatErrorType, RequestTrigger } from '@lobechat/types';
 import { describe, expect, it, vi } from 'vitest';
 
 import { chatService } from '@/services/chat';
@@ -1702,6 +1702,57 @@ describe('call_llm executor', () => {
   });
 
   describe('Google blocked stream errors', () => {
+    it('should mark the assistant message as failed and refresh messages when the stream rejects', async () => {
+      // Given
+      const mockStore = createMockStore();
+      const context = createTestContext();
+      const instruction = createCallLLMInstruction();
+      const state = createInitialState();
+
+      mockStore.dbMessagesMap[context.messageKey] = [];
+
+      vi.mocked(chatService.createAssistantMessageStream).mockRejectedValueOnce(
+        new TypeError('Failed to fetch'),
+      );
+
+      // When
+      const result = await executeWithMockContext({
+        executor: 'call_llm',
+        instruction,
+        state,
+        mockStore,
+        context,
+      });
+
+      // Then
+      expect(mockStore.optimisticUpdateMessageError).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          message: 'Failed to fetch',
+          type: ChatErrorType.UnknownChatFetchError,
+        }),
+        { operationId: context.operationId },
+      );
+      expect(mockStore.refreshMessages).toHaveBeenCalledWith({
+        agentId: context.agentId,
+        groupId: undefined,
+        threadId: undefined,
+        topicId: context.topicId,
+      });
+      expect(result).toEqual(
+        expect.objectContaining({
+          events: [
+            expect.objectContaining({
+              type: 'error',
+            }),
+          ],
+          newState: expect.objectContaining({
+            status: 'error',
+          }),
+        }),
+      );
+    });
+
     it('should keep normal content and update message error state', async () => {
       // Given
       const mockStore = createMockStore();

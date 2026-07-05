@@ -106,6 +106,8 @@ export const createMockStore = (overrides: Partial<ChatStore> = {}): ChatStore =
 
     optimisticUpdatePluginState: vi.fn().mockResolvedValue(undefined),
 
+    refreshMessages: vi.fn().mockResolvedValue(undefined),
+
     // Operation management methods
     startOperation: vi.fn().mockImplementation((config) => {
       const operationId = `op_${nanoid()}`;
