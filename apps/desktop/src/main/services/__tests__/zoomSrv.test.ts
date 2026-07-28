@@ -1,40 +1,47 @@
+import type { WebContents } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { App } from '@/core/App';
 
-import ZoomService, { ZOOM_LEVEL_MAX, ZOOM_LEVEL_MIN } from '../zoomSrv';
+import ZoomService, { ZOOM_FACTOR_MAX, ZOOM_FACTOR_MIN } from '../zoomSrv';
 
 vi.mock('@/utils/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
+    error: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
-    error: vi.fn(),
   }),
 }));
 
 interface MockWebContents {
   destroyed: boolean;
-  getZoomLevel: () => number;
+  factor: number;
+  getZoomFactor: () => number;
   isDestroyed: () => boolean;
-  level: number;
   send: ReturnType<typeof vi.fn>;
-  setZoomLevel: (level: number) => void;
+  setZoomFactor: (factor: number) => void;
 }
 
-const createMockWebContents = (initialLevel = 0): MockWebContents => {
-  const wc: MockWebContents = {
+const createMockWebContents = (initialFactor = 1): MockWebContents => {
+  const webContents: MockWebContents = {
     destroyed: false,
-    level: initialLevel,
-    getZoomLevel: () => wc.level,
-    isDestroyed: () => wc.destroyed,
+    factor: initialFactor,
+    getZoomFactor: () => webContents.factor,
+    isDestroyed: () => webContents.destroyed,
     send: vi.fn(),
-    setZoomLevel: (level: number) => {
-      wc.level = level;
+    setZoomFactor: (factor: number) => {
+      webContents.factor = factor;
     },
   };
-  return wc;
+
+  return webContents;
 };
+
+const getExpectedPayload = (factor: number) => ({
+  factor,
+  level: Number((Math.log(factor) / Math.log(1.2)).toFixed(4)),
+});
 
 describe('ZoomService', () => {
   let service: ZoomService;
@@ -43,62 +50,73 @@ describe('ZoomService', () => {
     service = new ZoomService({} as App);
   });
 
-  it('increments zoom level by 1 on action=in', () => {
-    const wc = createMockWebContents(0);
-    service.apply('in', wc as any);
-    expect(wc.level).toBe(1);
-    expect(wc.send).toHaveBeenCalledWith('zoom:changed', { factor: 1.2, level: 1 });
+  it('increases zoom factor by 10 percentage points on action=in', () => {
+    const webContents = createMockWebContents(1);
+
+    service.apply('in', webContents as unknown as WebContents);
+
+    expect(webContents.factor).toBe(1.1);
+    expect(webContents.send).toHaveBeenCalledWith('zoom:changed', getExpectedPayload(1.1));
   });
 
-  it('decrements zoom level by 1 on action=out', () => {
-    const wc = createMockWebContents(0);
-    service.apply('out', wc as any);
-    expect(wc.level).toBe(-1);
-    expect(wc.send).toHaveBeenCalledWith('zoom:changed', {
-      factor: Number((1.2 ** -1).toFixed(4)),
-      level: -1,
-    });
+  it('decreases zoom factor by 10 percentage points on action=out', () => {
+    const webContents = createMockWebContents(1);
+
+    service.apply('out', webContents as unknown as WebContents);
+
+    expect(webContents.factor).toBe(0.9);
+    expect(webContents.send).toHaveBeenCalledWith('zoom:changed', getExpectedPayload(0.9));
   });
 
-  it('resets to 0 on action=reset', () => {
-    const wc = createMockWebContents(2);
-    service.apply('reset', wc as any);
-    expect(wc.level).toBe(0);
-    expect(wc.send).toHaveBeenCalledWith('zoom:changed', { factor: 1, level: 0 });
+  it('resets zoom factor to 1 on action=reset', () => {
+    const webContents = createMockWebContents(1.3);
+
+    service.apply('reset', webContents as unknown as WebContents);
+
+    expect(webContents.factor).toBe(1);
+    expect(webContents.send).toHaveBeenCalledWith('zoom:changed', getExpectedPayload(1));
   });
 
-  it('clamps at ZOOM_LEVEL_MAX and still broadcasts current level', () => {
-    const wc = createMockWebContents(ZOOM_LEVEL_MAX);
-    service.apply('in', wc as any);
-    expect(wc.level).toBe(ZOOM_LEVEL_MAX);
-    expect(wc.send).toHaveBeenCalledWith('zoom:changed', {
-      factor: Number((1.2 ** ZOOM_LEVEL_MAX).toFixed(4)),
-      level: ZOOM_LEVEL_MAX,
-    });
+  it('rounds the zoom factor to avoid floating-point drift', () => {
+    const webContents = createMockWebContents(1.1);
+
+    service.apply('in', webContents as unknown as WebContents);
+
+    expect(webContents.factor).toBe(1.2);
+    expect(webContents.send).toHaveBeenCalledWith('zoom:changed', getExpectedPayload(1.2));
   });
 
-  it('clamps at ZOOM_LEVEL_MIN and still broadcasts current level', () => {
-    const wc = createMockWebContents(ZOOM_LEVEL_MIN);
-    service.apply('out', wc as any);
-    expect(wc.level).toBe(ZOOM_LEVEL_MIN);
-    expect(wc.send).toHaveBeenCalledWith('zoom:changed', {
-      factor: Number((1.2 ** ZOOM_LEVEL_MIN).toFixed(4)),
-      level: ZOOM_LEVEL_MIN,
-    });
+  it('clamps at ZOOM_FACTOR_MAX and still broadcasts the current factor', () => {
+    const webContents = createMockWebContents(ZOOM_FACTOR_MAX);
+
+    service.apply('in', webContents as unknown as WebContents);
+
+    expect(webContents.factor).toBe(ZOOM_FACTOR_MAX);
+    expect(webContents.send).toHaveBeenCalledWith(
+      'zoom:changed',
+      getExpectedPayload(ZOOM_FACTOR_MAX),
+    );
+  });
+
+  it('clamps at ZOOM_FACTOR_MIN and still broadcasts the current factor', () => {
+    const webContents = createMockWebContents(ZOOM_FACTOR_MIN);
+
+    service.apply('out', webContents as unknown as WebContents);
+
+    expect(webContents.factor).toBe(ZOOM_FACTOR_MIN);
+    expect(webContents.send).toHaveBeenCalledWith(
+      'zoom:changed',
+      getExpectedPayload(ZOOM_FACTOR_MIN),
+    );
   });
 
   it('skips when webContents is destroyed', () => {
-    const wc = createMockWebContents(0);
-    wc.destroyed = true;
-    service.apply('in', wc as any);
-    expect(wc.level).toBe(0);
-    expect(wc.send).not.toHaveBeenCalled();
-  });
+    const webContents = createMockWebContents(1);
+    webContents.destroyed = true;
 
-  it('factor matches 1.2 ** level for reset', () => {
-    const wc = createMockWebContents(0);
-    service.apply('reset', wc as any);
-    const payload = wc.send.mock.calls[0][1];
-    expect(payload.factor).toBe(1);
+    service.apply('in', webContents as unknown as WebContents);
+
+    expect(webContents.factor).toBe(1);
+    expect(webContents.send).not.toHaveBeenCalled();
   });
 });
