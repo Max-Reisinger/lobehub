@@ -50,7 +50,7 @@ describe('ZoomService', () => {
     service = new ZoomService({} as App);
   });
 
-  it('increases zoom factor by 10 percentage points on action=in', () => {
+  it('moves to the next Chromium zoom preset on action=in', () => {
     const webContents = createMockWebContents(1);
 
     service.apply('in', webContents as unknown as WebContents);
@@ -59,7 +59,7 @@ describe('ZoomService', () => {
     expect(webContents.send).toHaveBeenCalledWith('zoom:changed', getExpectedPayload(1.1));
   });
 
-  it('decreases zoom factor by 10 percentage points on action=out', () => {
+  it('moves to the previous Chromium zoom preset on action=out', () => {
     const webContents = createMockWebContents(1);
 
     service.apply('out', webContents as unknown as WebContents);
@@ -77,13 +77,53 @@ describe('ZoomService', () => {
     expect(webContents.send).toHaveBeenCalledWith('zoom:changed', getExpectedPayload(1));
   });
 
-  it('rounds the zoom factor to avoid floating-point drift', () => {
+  it('uses Chromium preset spacing beyond 110%', () => {
     const webContents = createMockWebContents(1.1);
 
     service.apply('in', webContents as unknown as WebContents);
 
-    expect(webContents.factor).toBe(1.2);
-    expect(webContents.send).toHaveBeenCalledWith('zoom:changed', getExpectedPayload(1.2));
+    expect(webContents.factor).toBe(1.25);
+    expect(webContents.send).toHaveBeenCalledWith('zoom:changed', getExpectedPayload(1.25));
+  });
+
+  it('uses Chromium preset spacing below 125%', () => {
+    const webContents = createMockWebContents(1.25);
+
+    service.apply('out', webContents as unknown as WebContents);
+
+    expect(webContents.factor).toBe(1.1);
+    expect(webContents.send).toHaveBeenCalledWith('zoom:changed', getExpectedPayload(1.1));
+  });
+
+  it('uses an epsilon when selecting a preset around floating-point drift', () => {
+    const zoomedInWebContents = createMockWebContents(1.1005);
+    const zoomedOutWebContents = createMockWebContents(1.0995);
+
+    service.apply('in', zoomedInWebContents as unknown as WebContents);
+    service.apply('out', zoomedOutWebContents as unknown as WebContents);
+
+    expect(zoomedInWebContents.factor).toBe(1.25);
+    expect(zoomedOutWebContents.factor).toBe(1);
+  });
+
+  it('zooms in from the legacy maximum without reversing direction', () => {
+    const legacyMaximum = 1.2 ** 3;
+    const webContents = createMockWebContents(legacyMaximum);
+
+    service.apply('in', webContents as unknown as WebContents);
+
+    expect(webContents.factor).toBe(1.75);
+    expect(webContents.factor).toBeGreaterThan(legacyMaximum);
+  });
+
+  it('zooms out from the legacy minimum without reversing direction', () => {
+    const legacyMinimum = 1.2 ** -3;
+    const webContents = createMockWebContents(legacyMinimum);
+
+    service.apply('out', webContents as unknown as WebContents);
+
+    expect(webContents.factor).toBe(0.5);
+    expect(webContents.factor).toBeLessThan(legacyMinimum);
   });
 
   it('clamps at ZOOM_FACTOR_MAX and still broadcasts the current factor', () => {
