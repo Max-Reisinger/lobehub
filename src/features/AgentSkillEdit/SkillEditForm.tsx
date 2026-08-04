@@ -16,6 +16,8 @@ import { createStaticStyles, cssVar } from 'antd-style';
 import { memo, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useEditorContentSync } from './useEditorContentSync';
+
 const styles = createStaticStyles(({ css }) => ({
   editorWrapper: css`
     min-height: 200px;
@@ -69,21 +71,7 @@ const SkillEditForm = memo<SkillEditFormProps>(
       currentValueRef.current = initialValues.content;
     }, [initialValues.content]);
 
-    useEffect(() => {
-      if (!editor) return;
-
-      const timer = setTimeout(() => {
-        try {
-          if (initialValues.content) {
-            editor.setDocument('markdown', initialValues.content);
-          }
-        } catch {
-          editor.setDocument('markdown', initialValues.content);
-        }
-      }, 100);
-
-      return () => clearTimeout(timer);
-    }, [editor, initialValues.content]);
+    useEditorContentSync(editor, initialValues.content);
 
     const handleContentChange = useCallback(
       (e: any) => {
