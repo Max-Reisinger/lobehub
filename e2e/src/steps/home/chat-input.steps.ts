@@ -36,6 +36,44 @@ const focusHomeChatInput = async (world: CustomWorld): Promise<void> => {
   throw new Error('Could not find a visible Home chat input to focus');
 };
 
+Given('用户打开 Home 页面', async function (this: CustomWorld) {
+  await this.page.goto('/');
+
+  await expect(this.page.locator('[data-testid="chat-input"]').first()).toBeVisible({
+    timeout: WAIT_TIMEOUT,
+  });
+});
+
+When('用户打开聊天输入框的附件菜单', async function (this: CustomWorld) {
+  const chatInput = this.page.locator('[data-testid="chat-input"]').first();
+  const plusButton = chatInput.locator('button:has(svg.lucide-plus)').first();
+
+  await expect(plusButton).toBeVisible({ timeout: WAIT_TIMEOUT });
+  await plusButton.click();
+
+  const menu = this.page.locator('[role="menu"]').first();
+  await expect(menu).toBeVisible({ timeout: WAIT_TIMEOUT });
+
+  const fileInput = this.page.locator('[role="menu"] input[type="file"]');
+
+  if ((await fileInput.count()) === 0) {
+    const attachmentsItem = this.page
+      .locator('[role="menuitem"]:has(svg.lucide-library-big)')
+      .first();
+
+    await expect(attachmentsItem).toBeVisible({ timeout: WAIT_TIMEOUT });
+    await attachmentsItem.hover();
+  }
+});
+
+Then('文件选择控件应声明接受所有文件类型', async function (this: CustomWorld) {
+  const fileInput = this.page.locator('[role="menu"] input[type="file"]').first();
+
+  await expect(fileInput).toHaveAttribute('accept', '*/*', {
+    timeout: WAIT_TIMEOUT,
+  });
+});
+
 Given(
   '用户在冷启动 Home 页面并延迟 Agent 路由加载',
   { timeout: 45_000 },
