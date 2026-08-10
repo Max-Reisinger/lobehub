@@ -531,12 +531,11 @@ describe('UserMemoryModel', () => {
 
         const result = await memoryModel.queryMemories({ layer: LayersEnum.Context });
 
-        expect(result.items).toMatchObject([
-          {
-            context: { capturedAt },
-            layer: LayersEnum.Context,
-          },
-        ]);
+        const [item] = result.items;
+        expect(item?.layer).toBe(LayersEnum.Context);
+        if (item?.layer === LayersEnum.Context) {
+          expect(item.context.capturedAt).toEqual(capturedAt);
+        }
       });
 
       // BM25 search requires pg_search extension (ParadeDB), not available in PGlite
@@ -589,12 +588,11 @@ describe('UserMemoryModel', () => {
 
         const result = await memoryModel.queryMemories({ layer: LayersEnum.Experience });
 
-        expect(result.items).toMatchObject([
-          {
-            experience: { capturedAt },
-            layer: LayersEnum.Experience,
-          },
-        ]);
+        const [item] = result.items;
+        expect(item?.layer).toBe(LayersEnum.Experience);
+        if (item?.layer === LayersEnum.Experience) {
+          expect(item.experience.capturedAt).toEqual(capturedAt);
+        }
       });
     });
 
@@ -625,12 +623,11 @@ describe('UserMemoryModel', () => {
 
         const result = await memoryModel.queryMemories({ layer: LayersEnum.Preference });
 
-        expect(result.items).toMatchObject([
-          {
-            layer: LayersEnum.Preference,
-            preference: { capturedAt },
-          },
-        ]);
+        const [item] = result.items;
+        expect(item?.layer).toBe(LayersEnum.Preference);
+        if (item?.layer === LayersEnum.Preference) {
+          expect(item.preference.capturedAt).toEqual(capturedAt);
+        }
       });
     });
 
