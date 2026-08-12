@@ -46,10 +46,12 @@ Given('用户打开 Home 页面', async function (this: CustomWorld) {
 
 When('用户打开聊天输入框的附件菜单', async function (this: CustomWorld) {
   const chatInput = this.page.locator('[data-testid="chat-input"]').first();
-  const plusButton = chatInput.locator('button:has(svg.lucide-plus)').first();
+  const plusAction = chatInput
+    .locator('[role="button"][aria-haspopup="menu"]:has(svg.lucide-plus)')
+    .first();
 
-  await expect(plusButton).toBeVisible({ timeout: WAIT_TIMEOUT });
-  await plusButton.click();
+  await expect(plusAction).toBeVisible({ timeout: WAIT_TIMEOUT });
+  await plusAction.click();
 
   const menu = this.page.locator('[role="menu"]').first();
   await expect(menu).toBeVisible({ timeout: WAIT_TIMEOUT });
