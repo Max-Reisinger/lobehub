@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import { type EnabledProviderWithModels } from '@/types/aiProvider';
 
+import { isAutoRouterModel } from '../const';
 import { type GroupMode, type ListItem, type ModelWithProviders } from '../types';
 
 export const buildListItems = (
@@ -70,14 +71,20 @@ export const buildListItems = (
       });
     }
 
-    const sortedModels = sortModelLast
-      ? modelArray.toSorted((a, b) => {
-          const aLast = a.providers.every((provider) => sortModelLast(a.model.id, provider.id));
-          const bLast = b.providers.every((provider) => sortModelLast(b.model.id, provider.id));
+    const isAutoRouterRow = (item: ModelWithProviders) =>
+      item.providers.some((provider) => isAutoRouterModel(item.model.id, provider.id));
 
-          return Number(aLast) - Number(bLast);
-        })
-      : modelArray;
+    const sortedModels = modelArray.toSorted((a, b) => {
+      const autoRouterOrder = Number(isAutoRouterRow(b)) - Number(isAutoRouterRow(a));
+
+      if (autoRouterOrder !== 0) return autoRouterOrder;
+      if (!sortModelLast) return 0;
+
+      const aLast = a.providers.every((provider) => sortModelLast(a.model.id, provider.id));
+      const bLast = b.providers.every((provider) => sortModelLast(b.model.id, provider.id));
+
+      return Number(aLast) - Number(bLast);
+    });
 
     return sortedModels.map((data) => ({
       data,
@@ -94,13 +101,19 @@ export const buildListItems = (
         (modelItem) =>
           matchesSearch(modelItem.displayName || modelItem.id) || matchesSearch(providerItem.name),
       );
-      const sortedModels = sortModelLast
-        ? filteredModels.toSorted(
-            (a, b) =>
-              Number(sortModelLast(a.id, providerItem.id)) -
-              Number(sortModelLast(b.id, providerItem.id)),
-          )
-        : filteredModels;
+      const sortedModels = filteredModels.toSorted((a, b) => {
+        const autoRouterOrder =
+          Number(isAutoRouterModel(b.id, providerItem.id)) -
+          Number(isAutoRouterModel(a.id, providerItem.id));
+
+        if (autoRouterOrder !== 0) return autoRouterOrder;
+        if (!sortModelLast) return 0;
+
+        return (
+          Number(sortModelLast(a.id, providerItem.id)) -
+          Number(sortModelLast(b.id, providerItem.id))
+        );
+      });
 
       if (sortedModels.length > 0 || !searchKeyword.trim()) {
         items.push({ provider: providerItem, type: 'group-header' });
