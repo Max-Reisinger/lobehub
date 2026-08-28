@@ -1042,6 +1042,81 @@ describe('AiAgentService.stopPendingApproval', () => {
     service = new AiAgentService({} as unknown as LobeChatDatabase, 'user-1');
   });
 
+  it('stops a pending batch owned by a running heterogeneous operation', async () => {
+    mockFindOperationById.mockResolvedValue({
+      id: 'op-parked-1',
+      status: 'running',
+      topicId: 'topic-1',
+    });
+
+    await expect(
+      service.stopPendingApproval({
+        batchId: 'batch-1',
+        operationId: 'op-parked-1',
+        toolMessageIds: ['tool-msg-1', 'tool-msg-2'],
+        topicId: 'topic-1',
+      }),
+    ).resolves.toEqual({
+      operationId: 'op-parked-1',
+      settledToolMessageIds: ['tool-msg-1', 'tool-msg-2'],
+      success: true,
+    });
+
+    expect(mockInterruptOperation).toHaveBeenCalledWith('op-parked-1');
+    expect(mockRecordCompletion).toHaveBeenCalledWith(
+      'op-parked-1',
+      expect.objectContaining({ completionReason: 'interrupted', status: 'interrupted' }),
+    );
+  });
+
+  it('treats a repeated Stop for the same batch as idempotent', async () => {
+    const params = {
+      batchId: 'batch-1',
+      operationId: 'op-parked-1',
+      toolMessageIds: ['tool-msg-1', 'tool-msg-2'],
+      topicId: 'topic-1',
+    };
+
+    await service.stopPendingApproval(params);
+
+    const firstResolutions = mockResolveHumanApproval.mock.calls[0][0];
+    const resolutionRequestId = firstResolutions[0].intervention.resolutionRequestId;
+    expect(resolutionRequestId).toEqual(expect.any(String));
+
+    const abortedIntervention = {
+      batchId: 'batch-1',
+      operationId: 'op-parked-1',
+      resolutionRequestId,
+      status: 'aborted',
+    };
+    mockFindOperationById.mockResolvedValue({
+      id: 'op-parked-1',
+      status: 'interrupted',
+      topicId: 'topic-1',
+    });
+    mockFindMessagePlugin.mockResolvedValue({ intervention: abortedIntervention });
+    mockListMessagePluginsByTopic.mockResolvedValue(
+      ['tool-msg-1', 'tool-msg-2'].map((id) => ({
+        id,
+        intervention: abortedIntervention,
+      })),
+    );
+
+    mockResolveHumanApproval.mockClear();
+    mockInterruptOperation.mockClear();
+    mockRecordCompletion.mockClear();
+
+    await expect(service.stopPendingApproval(params)).resolves.toEqual({
+      operationId: 'op-parked-1',
+      settledToolMessageIds: ['tool-msg-1', 'tool-msg-2'],
+      success: true,
+    });
+
+    expect(mockResolveHumanApproval).not.toHaveBeenCalled();
+    expect(mockInterruptOperation).not.toHaveBeenCalled();
+    expect(mockRecordCompletion).not.toHaveBeenCalled();
+  });
+
   it('settles every pending row in place and retires the parked operation', async () => {
     const result = await service.stopPendingApproval({
       batchId: 'batch-1',
@@ -1057,12 +1132,12 @@ describe('AiAgentService.stopPendingApproval', () => {
       {
         content: 'Tool execution was aborted by user.',
         id: 'tool-msg-1',
-        intervention: { status: 'aborted' },
+        intervention: { resolutionRequestId: 'legacy_stop_batch-1', status: 'aborted' },
       },
       {
         content: 'Tool execution was aborted by user.',
         id: 'tool-msg-2',
-        intervention: { status: 'aborted' },
+        intervention: { resolutionRequestId: 'legacy_stop_batch-1', status: 'aborted' },
       },
     ]);
 

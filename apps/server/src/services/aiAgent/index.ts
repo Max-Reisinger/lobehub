@@ -6535,7 +6535,7 @@ export class AiAgentService {
   }
 
   /**
-   * Stop a run that is parked waiting for tool approval: settle the pending
+   * Stop a run waiting for tool approval: settle the pending
    * tool rows and terminate the operation, WITHOUT executing anything and
    * without continuing the model.
    *
@@ -6566,13 +6566,17 @@ export class AiAgentService {
     settledToolMessageIds: string[];
     success: boolean;
   }> {
-    const { approvalResolutionRequestId, batchId, operationId, toolMessageIds, topicId } = params;
+    const { batchId, operationId, toolMessageIds, topicId } = params;
+    const approvalResolutionRequestId =
+      params.approvalResolutionRequestId ?? `legacy_stop_${batchId}`;
 
     const operation = await this.agentOperationModel.findById(operationId);
     if (
       !operation ||
       operation.topicId !== topicId ||
-      (operation.status !== 'waiting_for_human' && operation.status !== 'interrupted')
+      (operation.status !== 'running' &&
+        operation.status !== 'waiting_for_human' &&
+        operation.status !== 'interrupted')
     ) {
       throw new Error('stopPendingApproval: operation is not the parked owner of this topic');
     }
