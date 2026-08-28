@@ -104,4 +104,26 @@ describe('buildListItems', () => {
       'normal-newapi',
     ]);
   });
+
+  it('should keep restricted auto-router models last within a provider', () => {
+    const items = buildListItems(
+      [provider('newapi', [model('auto'), model('normal-newapi')])],
+      'byProvider',
+      '',
+      (modelId, providerId) => providerId === 'newapi' && modelId === 'auto',
+    );
+
+    expect(getProviderModelIds(items)).toEqual(['normal-newapi', 'auto']);
+  });
+
+  it('should keep restricted auto-router rows last in by-model mode', () => {
+    const items = buildListItems(
+      [provider('newapi', [model('auto'), model('normal-newapi')])],
+      'byModel',
+      '',
+      (modelId, providerId) => providerId === 'newapi' && modelId === 'auto',
+    );
+
+    expect(getGroupedModelIds(items)).toEqual(['normal-newapi', 'auto']);
+  });
 });

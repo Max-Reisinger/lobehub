@@ -75,15 +75,17 @@ export const buildListItems = (
       item.providers.some((provider) => isAutoRouterModel(item.model.id, provider.id));
 
     const sortedModels = modelArray.toSorted((a, b) => {
-      const autoRouterOrder = Number(isAutoRouterRow(b)) - Number(isAutoRouterRow(a));
+      const aLast = sortModelLast
+        ? a.providers.every((provider) => sortModelLast(a.model.id, provider.id))
+        : false;
+      const bLast = sortModelLast
+        ? b.providers.every((provider) => sortModelLast(b.model.id, provider.id))
+        : false;
+      const restrictedOrder = Number(aLast) - Number(bLast);
 
-      if (autoRouterOrder !== 0) return autoRouterOrder;
-      if (!sortModelLast) return 0;
+      if (restrictedOrder !== 0) return restrictedOrder;
 
-      const aLast = a.providers.every((provider) => sortModelLast(a.model.id, provider.id));
-      const bLast = b.providers.every((provider) => sortModelLast(b.model.id, provider.id));
-
-      return Number(aLast) - Number(bLast);
+      return Number(isAutoRouterRow(b)) - Number(isAutoRouterRow(a));
     });
 
     return sortedModels.map((data) => ({
@@ -102,16 +104,16 @@ export const buildListItems = (
           matchesSearch(modelItem.displayName || modelItem.id) || matchesSearch(providerItem.name),
       );
       const sortedModels = filteredModels.toSorted((a, b) => {
-        const autoRouterOrder =
-          Number(isAutoRouterModel(b.id, providerItem.id)) -
-          Number(isAutoRouterModel(a.id, providerItem.id));
+        const restrictedOrder = sortModelLast
+          ? Number(sortModelLast(a.id, providerItem.id)) -
+            Number(sortModelLast(b.id, providerItem.id))
+          : 0;
 
-        if (autoRouterOrder !== 0) return autoRouterOrder;
-        if (!sortModelLast) return 0;
+        if (restrictedOrder !== 0) return restrictedOrder;
 
         return (
-          Number(sortModelLast(a.id, providerItem.id)) -
-          Number(sortModelLast(b.id, providerItem.id))
+          Number(isAutoRouterModel(b.id, providerItem.id)) -
+          Number(isAutoRouterModel(a.id, providerItem.id))
         );
       });
 
