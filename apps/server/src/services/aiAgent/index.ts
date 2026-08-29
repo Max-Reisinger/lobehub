@@ -6656,7 +6656,7 @@ export class AiAgentService {
     }
 
     if (operation.status !== 'interrupted') {
-      await this.agentRuntimeService.interruptOperation(operationId);
+      await this.interruptTask({ operationId, topicId });
       await this.agentOperationModel.recordCompletion(operationId, {
         completedAt: new Date(),
         completionReason: 'interrupted',

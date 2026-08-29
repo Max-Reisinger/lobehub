@@ -12,6 +12,7 @@ import { AiAgentService } from '../index';
 
 const {
   mockCreateOperation,
+  mockExecuteToolCall,
   mockFindById,
   mockFindMessagePlugin,
   mockMessageCreate,
@@ -22,6 +23,7 @@ const {
   mockUpdateMessagePlugin,
   mockUpdateTopicMetadata,
   mockUpdateToolMessage,
+  mockTopicFindById,
   mockFindOperationById,
   mockRecordCompletion,
   mockRepairAgentInterventionContinuation,
@@ -32,6 +34,7 @@ const {
   mockTryReserveTaskCallback,
 } = vi.hoisted(() => ({
   mockEnsureInterventionContinuationStarted: vi.fn(),
+  mockExecuteToolCall: vi.fn(),
   mockFindOperationById: vi.fn(),
   mockRecordCompletion: vi.fn(),
   mockRepairAgentInterventionContinuation: vi.fn(),
@@ -49,6 +52,7 @@ const {
   mockUpdateMessagePlugin: vi.fn(),
   mockUpdateTopicMetadata: vi.fn(),
   mockUpdateToolMessage: vi.fn(),
+  mockTopicFindById: vi.fn(),
   mockTryReserveTaskCallback: vi.fn(),
 }));
 
@@ -104,7 +108,7 @@ vi.mock('@/database/models/topic', () => ({
     repairAgentInterventionContinuation: mockRepairAgentInterventionContinuation,
     tryReserveTaskCallback: mockTryReserveTaskCallback,
     create: vi.fn().mockResolvedValue({ id: 'topic-1' }),
-    findById: vi.fn().mockResolvedValue(null),
+    findById: mockTopicFindById,
     updateMetadata: mockUpdateTopicMetadata,
   })),
 }));
@@ -169,7 +173,11 @@ vi.mock('@/server/modules/Mecha', () => ({
 }));
 
 vi.mock('@/server/services/deviceGateway', () => ({
-  deviceGateway: { isConfigured: false, queryDeviceList: vi.fn().mockResolvedValue([]) },
+  deviceGateway: {
+    executeToolCall: mockExecuteToolCall,
+    isConfigured: false,
+    queryDeviceList: vi.fn().mockResolvedValue([]),
+  },
 }));
 
 vi.mock('@/server/modules/ModelRuntime', () => ({
@@ -1039,6 +1047,8 @@ describe('AiAgentService.stopPendingApproval', () => {
     });
     mockRecordCompletion.mockResolvedValue(undefined);
     mockInterruptOperation.mockResolvedValue(true);
+    mockTopicFindById.mockResolvedValue(null);
+    mockExecuteToolCall.mockResolvedValue({ success: true });
     service = new AiAgentService({} as unknown as LobeChatDatabase, 'user-1');
   });
 
@@ -1047,6 +1057,17 @@ describe('AiAgentService.stopPendingApproval', () => {
       id: 'op-parked-1',
       status: 'running',
       topicId: 'topic-1',
+    });
+    mockTopicFindById.mockResolvedValue({
+      metadata: {
+        runningOperation: {
+          deviceId: 'device-1',
+          deviceUserId: 'device-user-1',
+          deviceWorkspaceId: 'workspace-1',
+          heteroType: 'openclaw',
+          operationId: 'op-parked-1',
+        },
+      },
     });
 
     await expect(
@@ -1062,6 +1083,19 @@ describe('AiAgentService.stopPendingApproval', () => {
       success: true,
     });
 
+    expect(mockExecuteToolCall).toHaveBeenCalledWith(
+      {
+        deviceId: 'device-1',
+        userId: 'device-user-1',
+        workspaceId: 'workspace-1',
+      },
+      {
+        apiName: 'cancelHeteroTask',
+        arguments: JSON.stringify({ signal: 'SIGINT', taskId: 'op-parked-1' }),
+        identifier: 'cancelHeteroTask',
+      },
+      5_000,
+    );
     expect(mockInterruptOperation).toHaveBeenCalledWith('op-parked-1');
     expect(mockRecordCompletion).toHaveBeenCalledWith(
       'op-parked-1',
