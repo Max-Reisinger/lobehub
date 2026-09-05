@@ -1,4 +1,5 @@
 import { TaskIdentifier as TaskSkillIdentifier } from '@lobechat/builtin-skills';
+import { AcceptanceEvidenceIdentifier } from '@lobechat/builtin-tool-acceptance-evidence';
 import { BriefIdentifier } from '@lobechat/builtin-tool-brief';
 import { INBOX_SESSION_ID } from '@lobechat/const';
 import type { ExecAgentResult, TaskItem, TaskRunTrigger } from '@lobechat/types';
@@ -96,7 +97,12 @@ export class TaskRunnerService {
             message: 'Failed to resolve fallback inbox agent for task',
           });
         }
-        await this.taskModel.update(task.id, { assigneeAgentId: inboxAgent.id });
+        // A human-assigned task still executes via the inbox agent, but the
+        // fallback must stay ephemeral — persisting it would silently replace
+        // the member assignment on the first run.
+        if (!task.assigneeUserId) {
+          await this.taskModel.update(task.id, { assigneeAgentId: inboxAgent.id });
+        }
         task.assigneeAgentId = inboxAgent.id;
       }
 
@@ -128,7 +134,11 @@ export class TaskRunnerService {
         }
       }
 
-      const { fileIds: attachmentFileIds, prompt } = await buildTaskPrompt(
+      const {
+        acceptanceEnabled,
+        fileIds: attachmentFileIds,
+        prompt,
+      } = await buildTaskPrompt(
         task,
         {
           briefModel: this.briefModel,
@@ -179,6 +189,11 @@ export class TaskRunnerService {
       if (briefMode === 'agent' && !reviewConfig?.enabled && checkpoint.onAgentRequest !== false) {
         pluginIds.push(BriefIdentifier);
       }
+      // The Acceptance runs inside the Task, so the builder needs listCriteria +
+      // submitEvidence for the whole run — not only in the post-run evidence
+      // turn, which mounts this tool exclusively and therefore can only ever
+      // restate text it already wrote.
+      if (acceptanceEnabled) pluginIds.push(AcceptanceEvidenceIdentifier);
 
       const taskConfig = (task.config ?? {}) as Record<string, unknown>;
 

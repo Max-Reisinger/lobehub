@@ -92,6 +92,36 @@ describe('MessagesEngine', () => {
         expect(result.messages.at(-1)?.content).toContain('Message task');
       });
 
+      it('keeps goal context after the real user and TODO context at the tail', async () => {
+        const result = await new MessagesEngine(
+          createBasicParams({
+            initialContext: {
+              goalOverview: {
+                findings: [],
+                goal: { status: 'running', title: 'Demo goal' },
+                pendingDecisions: [],
+                tasks: [],
+              },
+            },
+            stepContext: { todos: messageTodos },
+          }),
+        ).process();
+
+        expect(result.messages.map(({ role }) => role)).toEqual([
+          'user',
+          'assistant',
+          'tool',
+          'assistant',
+          'user',
+        ]);
+        expect(result.messages[0].content).toBe('Hello');
+        expect(result.messages[1].tool_calls?.[0].function.name).toBe('getGoalContext');
+        expect(result.messages[2].tool_call_id).toBe(result.messages[1].tool_calls?.[0].id);
+        expect(result.messages[2].content).toContain('Demo goal');
+        expect(result.messages[3].content).toBe('Hi there!');
+        expect(result.messages[4].content).toContain('<todo_context>');
+      });
+
       it('prefers message state over plan metadata', async () => {
         const result = await new MessagesEngine(
           createBasicParams({

@@ -16,7 +16,11 @@ vi.mock('@/business/server/trpc-middlewares/rbacPermission', () => ({
 }));
 
 const mockTopicFindById = vi.fn();
-const mockTopicTakeRunningOperation = vi.fn();
+// The entry lookup goes through the visitor-excluding twin; by default it
+// mirrors `findById` so the existing scenarios keep their single source of
+// topic state.
+const mockTopicFindOwnTopicById = vi.fn((...args: unknown[]) => mockTopicFindById(...args));
+const mockTopicSettleRunningOperation = vi.fn();
 const mockTopicUpdateMetadata = vi.fn();
 const mockTopicRemoveRunningOperationChild = vi.fn();
 const mockMessageFindById = vi.fn();
@@ -39,8 +43,9 @@ vi.mock('@/server/services/verify', async (orig) => ({
 vi.mock('@/database/models/topic', () => ({
   TopicModel: vi.fn(() => ({
     findById: mockTopicFindById,
+    findOwnTopicById: mockTopicFindOwnTopicById,
     removeRunningOperationChild: mockTopicRemoveRunningOperationChild,
-    takeRunningOperation: mockTopicTakeRunningOperation,
+    settleRunningOperation: mockTopicSettleRunningOperation,
     updateMetadata: mockTopicUpdateMetadata,
   })),
 }));
@@ -102,8 +107,9 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
         },
       },
     });
-    mockTopicTakeRunningOperation.mockResolvedValue({
+    mockTopicSettleRunningOperation.mockResolvedValue({
       isRoot: true,
+      status: 'settled',
       operation: {
         assistantMessageId: FINAL_MSG_ID,
         hooks: [{ id: 'task-on-complete', type: 'onComplete', webhook: { url: '/wh' } }],
@@ -123,6 +129,26 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
 
   afterEach(() => {
     hookDispatcher.unregister(OP);
+  });
+
+  // Visitor topics carry the creator's userId, so an ownership-only lookup
+  // would let a creator-side caller append to or overwrite a visitor
+  // transcript through this callback.
+  it('rejects an agent-share visitor topic with NOT_FOUND before any write', async () => {
+    mockTopicFindOwnTopicById.mockResolvedValueOnce(undefined);
+
+    await expect(
+      createCaller().notify({
+        content: 'hi',
+        messageId: 'msg-1',
+        role: 'assistant',
+        topicId: TOPIC,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    expect(mockMessageUpdate).not.toHaveBeenCalled();
+    expect(mockMessageCreate).not.toHaveBeenCalled();
+    expect(mockExecAgent).not.toHaveBeenCalled();
   });
 
   it('empty done signal finalizes success AND carries the final reply into the hooks', async () => {
@@ -147,7 +173,7 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
     });
     expect(onError).not.toHaveBeenCalled();
 
-    expect(mockTopicTakeRunningOperation).toHaveBeenCalledWith(TOPIC, OP);
+    expect(mockTopicSettleRunningOperation).toHaveBeenCalledWith(TOPIC, OP, expect.any(String));
   });
 
   it('cancelled terminal signal finalizes the run as interrupted', async () => {
@@ -176,7 +202,7 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
     });
     expect(onError).not.toHaveBeenCalled();
     expect(mockInstantiateVerifyPlan).not.toHaveBeenCalled();
-    expect(mockTopicTakeRunningOperation).toHaveBeenCalledWith(TOPIC, OP);
+    expect(mockTopicSettleRunningOperation).toHaveBeenCalledWith(TOPIC, OP, expect.any(String));
   });
 
   it('uses the marker snapshot read before terminal lifecycle completion', async () => {
@@ -213,7 +239,7 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
     ).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
 
     expect(mockPublishAgentRuntimeEnd).not.toHaveBeenCalled();
-    expect(mockTopicTakeRunningOperation).not.toHaveBeenCalled();
+    expect(mockTopicSettleRunningOperation).not.toHaveBeenCalled();
 
     await expect(
       createCaller().notify({ content: '', done: true, role: 'assistant', topicId: TOPIC }),
@@ -221,7 +247,7 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
 
     expect(completeOperationSpy).toHaveBeenCalledTimes(2);
     expect(mockPublishAgentRuntimeEnd).toHaveBeenCalledTimes(1);
-    expect(mockTopicTakeRunningOperation).toHaveBeenCalledWith(TOPIC, OP);
+    expect(mockTopicSettleRunningOperation).toHaveBeenCalledWith(TOPIC, OP, expect.any(String));
     completeOperationSpy.mockRestore();
   });
 
@@ -235,8 +261,9 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
         metadata: { runningOperation: { operationId: OP, assistantMessageId: FINAL_MSG_ID } },
       })
       .mockResolvedValueOnce({ agentId: 'agent-1', metadata: { runningOperation: null } });
-    mockTopicTakeRunningOperation.mockResolvedValueOnce({
+    mockTopicSettleRunningOperation.mockResolvedValueOnce({
       isRoot: true,
+      status: 'settled',
       operation: { operationId: OP, assistantMessageId: FINAL_MSG_ID },
     });
     mockOpFindById.mockResolvedValue({
@@ -268,7 +295,7 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
 
     expect(completeOperationSpy).toHaveBeenCalledTimes(1);
     expect(mockPublishAgentRuntimeEnd).toHaveBeenCalledTimes(2);
-    expect(mockTopicTakeRunningOperation).toHaveBeenCalledTimes(1);
+    expect(mockTopicSettleRunningOperation).toHaveBeenCalledTimes(1);
     completeOperationSpy.mockRestore();
   });
 
@@ -305,7 +332,7 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
 
     await createCaller().notify({ content: '', done: true, role: 'assistant', topicId: TOPIC });
 
-    expect(mockTopicTakeRunningOperation).toHaveBeenCalledWith(TOPIC, OP);
+    expect(mockTopicSettleRunningOperation).toHaveBeenCalledWith(TOPIC, OP, expect.any(String));
     expect(mockInstantiateVerifyPlan).not.toHaveBeenCalled();
   });
 
@@ -346,8 +373,9 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
         },
       },
     });
-    mockTopicTakeRunningOperation.mockResolvedValue({
+    mockTopicSettleRunningOperation.mockResolvedValue({
       isRoot: false,
+      status: 'settled',
       operation: { operationId: childOperationId, orchestrationRole: 'member' },
     });
 
@@ -362,7 +390,11 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
     expect(mockPublishAgentRuntimeEnd).toHaveBeenCalledWith(
       expect.objectContaining({ operationId: childOperationId, reason: 'success' }),
     );
-    expect(mockTopicTakeRunningOperation).toHaveBeenCalledWith(TOPIC, childOperationId);
+    expect(mockTopicSettleRunningOperation).toHaveBeenCalledWith(
+      TOPIC,
+      childOperationId,
+      expect.any(String),
+    );
     expect(completeOperationSpy).toHaveBeenCalledWith(
       expect.objectContaining({ operationId: childOperationId, orchestrationRole: 'member' }),
       'done',
@@ -388,8 +420,9 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
         },
       },
     });
-    mockTopicTakeRunningOperation.mockResolvedValue({
+    mockTopicSettleRunningOperation.mockResolvedValue({
       isRoot: false,
+      status: 'settled',
       operation: { operationId: childOperationId, orchestrationRole: 'member' },
     });
 
@@ -400,7 +433,11 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
       'done',
       expect.anything(),
     );
-    expect(mockTopicTakeRunningOperation).toHaveBeenCalledWith(TOPIC, childOperationId);
+    expect(mockTopicSettleRunningOperation).toHaveBeenCalledWith(
+      TOPIC,
+      childOperationId,
+      expect.any(String),
+    );
     completeOperationSpy.mockRestore();
   });
 
@@ -422,7 +459,7 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
       createCaller().notify({ content: '', done: true, role: 'assistant', topicId: TOPIC }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 
-    expect(mockTopicTakeRunningOperation).not.toHaveBeenCalled();
+    expect(mockTopicSettleRunningOperation).not.toHaveBeenCalled();
   });
 
   it('ignores a repeated child terminal callback after its marker was removed', async () => {
@@ -448,12 +485,13 @@ describe('agentNotifyRouter.notify — remote hetero terminal signal', () => {
         },
       },
     });
-    mockTopicTakeRunningOperation
+    mockTopicSettleRunningOperation
       .mockResolvedValueOnce({
         isRoot: false,
+        status: 'settled',
         operation: { operationId: childOperationId, orchestrationRole: 'member' },
       })
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce({ status: 'missing' });
 
     await createCaller().notify({
       content: '',
