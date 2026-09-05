@@ -1,9 +1,34 @@
+import dayjs from 'dayjs';
 import { useMemo } from 'react';
 
 import { type EnabledProviderWithModels } from '@/types/aiProvider';
+import { isNewReleaseDate } from '@/utils/time';
 
 import { isAutoRouterModel } from '../const';
 import { type GroupMode, type ListItem, type ModelWithProviders } from '../types';
+
+/**
+ * Shares the exact rule behind `NewModelBadge`, so a model is pinned to the top only while its
+ * badge is still visible. Every renderer of this list must keep the badge on — otherwise models
+ * jump ahead with no visible explanation.
+ */
+const isNewModel = (releasedAt?: string): boolean => !!releasedAt && isNewReleaseDate(releasedAt);
+
+/**
+ * Pins new models to the top, then orders them newest-first. Ranking the pinned models by
+ * `displayOrder` instead would surface whichever vendor happens to sit earliest in the catalog,
+ * so a model released days earlier could outrank today's launch under the same "new" badge.
+ *
+ * Same-day releases fall through to 0 and keep `displayOrder` via stable sort.
+ */
+const compareNewness = (a?: string, b?: string): number => {
+  const aNew = isNewModel(a);
+  const bNew = isNewModel(b);
+  if (aNew !== bNew) return aNew ? -1 : 1;
+  if (!aNew) return 0;
+
+  return dayjs(b).valueOf() - dayjs(a).valueOf();
+};
 
 export const buildListItems = (
   enabledList: EnabledProviderWithModels[],
@@ -75,17 +100,15 @@ export const buildListItems = (
       item.providers.some((provider) => isAutoRouterModel(item.model.id, provider.id));
 
     const sortedModels = modelArray.toSorted((a, b) => {
-      const aLast = sortModelLast
-        ? a.providers.every((provider) => sortModelLast(a.model.id, provider.id))
-        : false;
-      const bLast = sortModelLast
-        ? b.providers.every((provider) => sortModelLast(b.model.id, provider.id))
-        : false;
-      const restrictedOrder = Number(aLast) - Number(bLast);
+      if (sortModelLast) {
+        const aLast = a.providers.every((provider) => sortModelLast(a.model.id, provider.id));
+        const bLast = b.providers.every((provider) => sortModelLast(b.model.id, provider.id));
+        if (aLast !== bLast) return Number(aLast) - Number(bLast);
+      }
+      const autoRouterOrder = Number(isAutoRouterRow(b)) - Number(isAutoRouterRow(a));
+      if (autoRouterOrder !== 0) return autoRouterOrder;
 
-      if (restrictedOrder !== 0) return restrictedOrder;
-
-      return Number(isAutoRouterRow(b)) - Number(isAutoRouterRow(a));
+      return compareNewness(a.model.releasedAt, b.model.releasedAt);
     });
 
     return sortedModels.map((data) => ({
@@ -104,17 +127,18 @@ export const buildListItems = (
           matchesSearch(modelItem.displayName || modelItem.id) || matchesSearch(providerItem.name),
       );
       const sortedModels = filteredModels.toSorted((a, b) => {
-        const restrictedOrder = sortModelLast
-          ? Number(sortModelLast(a.id, providerItem.id)) -
-            Number(sortModelLast(b.id, providerItem.id))
-          : 0;
-
-        if (restrictedOrder !== 0) return restrictedOrder;
-
-        return (
+        if (sortModelLast) {
+          const diff =
+            Number(sortModelLast(a.id, providerItem.id)) -
+            Number(sortModelLast(b.id, providerItem.id));
+          if (diff !== 0) return diff;
+        }
+        const autoRouterOrder =
           Number(isAutoRouterModel(b.id, providerItem.id)) -
-          Number(isAutoRouterModel(a.id, providerItem.id))
-        );
+          Number(isAutoRouterModel(a.id, providerItem.id));
+        if (autoRouterOrder !== 0) return autoRouterOrder;
+
+        return compareNewness(a.releasedAt, b.releasedAt);
       });
 
       if (sortedModels.length > 0 || !searchKeyword.trim()) {
