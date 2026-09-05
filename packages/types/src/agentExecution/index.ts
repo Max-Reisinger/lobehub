@@ -174,6 +174,12 @@ export interface ExecAgentAppContext {
   threadId?: string | null;
   /** Topic ID */
   topicId?: string | null;
+  /**
+   * Goal detail page the conversation is happening on. The server builds
+   * `RuntimeInitialContext.goalOverview` from the goal graph so the agent can
+   * answer progress questions without tool calls.
+   */
+  viewedGoal?: { goalId: string };
 }
 
 /**
@@ -313,6 +319,12 @@ export interface ExecAgentResult {
   createdThreadId?: string;
   /** Error message if operation failed to start */
   error?: string;
+  /**
+   * External heterogeneous producer for this run. `null` explicitly denotes
+   * the normal AgentRuntime path; `undefined` is reserved for rolling clients
+   * talking to an older server that did not yet return this discriminator.
+   */
+  heteroType?: string | null;
   /** Status message */
   message: string;
   /** Queue message ID if auto-started */
