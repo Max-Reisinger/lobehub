@@ -375,6 +375,26 @@ describe('AiAgentService.execAgent - device tool pipeline ()', () => {
     });
   });
 
+  it('makes conversation search discoverable without a topic reference', async () => {
+    mockGetAgentConfig.mockResolvedValue(createBaseAgentConfig());
+
+    await service.execAgent({
+      agentId: 'agent-1',
+      prompt: 'Find our earlier conversation about Pulse pricing',
+    });
+
+    const callArgs = mockCreateOperation.mock.calls[0][0];
+    const manifest = callArgs.toolSet.manifestMap['lobe-topic-reference'];
+
+    expect(manifest).toBeDefined();
+    expect(manifest.api).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'searchTopics' }),
+        expect.objectContaining({ name: 'searchMessages' }),
+      ]),
+    );
+  });
+
   describe('RemoteDevice systemRole override', () => {
     it('should override RemoteDevice systemRole with dynamic prompt when enabled by ToolsEngine', async () => {
       const { deviceGateway } = await import('@/server/services/deviceGateway');

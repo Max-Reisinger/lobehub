@@ -1,9 +1,12 @@
+import type { SearchHistoryParams } from '@lobechat/builtin-tool-topic-reference';
 import { TopicReferenceIdentifier } from '@lobechat/builtin-tool-topic-reference';
+import { ConversationSearchRuntime } from '@lobechat/builtin-tool-topic-reference/executionRuntime';
 import type { LobeChatDatabase } from '@lobechat/database';
 import type { BuiltinServerRuntimeOutput } from '@lobechat/types';
 
 import { MessageModel } from '@/database/models/message';
 import { TopicModel } from '@/database/models/topic';
+import { createFtsSearchRepo } from '@/server/services/ftsSearch';
 
 import type { ServerRuntimeRegistration } from './types';
 
@@ -18,11 +21,20 @@ class TopicReferenceExecutionRuntime {
   private userId: string;
   private workspaceId?: string;
 
-  constructor(db: LobeChatDatabase, userId: string, workspaceId?: string) {
+  constructor(
+    db: LobeChatDatabase,
+    userId: string,
+    workspaceId: string | undefined,
+    private readonly searchRuntime: ConversationSearchRuntime,
+  ) {
     this.db = db;
     this.userId = userId;
     this.workspaceId = workspaceId;
   }
+
+  searchMessages = (params: SearchHistoryParams) => this.searchRuntime.searchMessages(params);
+
+  searchTopics = (params: SearchHistoryParams) => this.searchRuntime.searchTopics(params);
 
   getTopicContext = async (params: GetTopicContextParams): Promise<BuiltinServerRuntimeOutput> => {
     const { topicId } = params;
@@ -92,11 +104,21 @@ export const topicReferenceRuntime: ServerRuntimeRegistration = {
     if (!context.userId) {
       throw new Error('userId is required for TopicReference execution');
     }
-    return new TopicReferenceExecutionRuntime(
-      context.serverDB,
-      context.userId,
-      context.workspaceId,
-    );
+    const { agentVisibility, serverDB, userId, workspaceId } = context;
+    const searchRuntime = new ConversationSearchRuntime(async (params) => {
+      const repo = await createFtsSearchRepo({
+        callerAgentVisibility: agentVisibility,
+        db: serverDB,
+        usage: params.type === 'topic' ? 'topic_search' : 'message_search',
+        userId,
+        workspaceId,
+      });
+
+      const results = await repo.search(params);
+      return results.filter((item) => item.type === 'topic' || item.type === 'message');
+    });
+
+    return new TopicReferenceExecutionRuntime(serverDB, userId, workspaceId, searchRuntime);
   },
   identifier: TopicReferenceIdentifier,
 };

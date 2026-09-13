@@ -214,6 +214,15 @@ describe('AGENT_SHARE_NO_DATA_GRANT_BUILTIN_IDENTIFIERS', () => {
 });
 
 describe('isShareBlockedDataToolCall', () => {
+  it.each(['searchTopics', 'searchMessages'])('blocks visitor dispatch of %s', (apiName) => {
+    expect(
+      isShareBlockedDataToolCall(
+        { allowReadMemory: true, knowledgeBaseIds: ['kb1'] },
+        TopicReferenceIdentifier,
+        apiName,
+      ),
+    ).toBe(true);
+  });
   it('lets non-builtin identifiers through untouched', () => {
     expect(isShareBlockedDataToolCall({}, 'mcp-github', 'anything')).toBe(false);
   });
@@ -306,7 +315,10 @@ describe('applyShareGateToToolSet', () => {
     // still allowlisted could still carry it in `toolGrants`; the gate must
     // keep dropping it rather than newly trusting the stored config.
     const toolSet = buildToolSet([
-      { apis: [{ name: 'getTopicContext' }], identifier: TopicReferenceIdentifier },
+      {
+        apis: [{ name: 'getTopicContext' }, { name: 'searchTopics' }, { name: 'searchMessages' }],
+        identifier: TopicReferenceIdentifier,
+      },
     ]);
 
     applyShareGateToToolSet(

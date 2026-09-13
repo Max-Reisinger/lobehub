@@ -3,6 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type ToolExecutionContext } from '../../types';
 
+const { mockCreateFtsSearchRepo, mockSearchHistory } = vi.hoisted(() => ({
+  mockCreateFtsSearchRepo: vi.fn(),
+  mockSearchHistory: vi.fn(),
+}));
+
+vi.mock('@/server/services/ftsSearch', () => ({
+  createFtsSearchRepo: mockCreateFtsSearchRepo,
+}));
+
 // Mock database models
 const mockTopicModelFindOwnTopicById = vi.fn();
 const mockMessageModelQuery = vi.fn();
@@ -27,6 +36,102 @@ vi.mock('@/database/models/message', () => ({
 const { MessageModel } = await import('@/database/models/message');
 const { TopicModel } = await import('@/database/models/topic');
 const { topicReferenceRuntime } = await import('../topicReference');
+
+describe('topicReferenceRuntime history search', () => {
+  beforeEach(() => {
+    mockSearchHistory.mockReset();
+    mockCreateFtsSearchRepo.mockReset();
+    mockCreateFtsSearchRepo.mockResolvedValue({ search: mockSearchHistory });
+  });
+
+  const createRuntime = (workspaceId?: string) =>
+    topicReferenceRuntime.factory({
+      agentVisibility: 'private',
+      serverDB: {} as NonNullable<ToolExecutionContext['serverDB']>,
+      toolManifestMap: {},
+      userId: 'owner-1',
+      workspaceId,
+    });
+
+  it('uses trusted scope while allowing an optional cross-agent filter', async () => {
+    mockSearchHistory.mockResolvedValue([]);
+    const result = await createRuntime('workspace-1').searchTopics({
+      agentId: 'agent-other',
+      query: '  Pulse  ',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockCreateFtsSearchRepo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callerAgentVisibility: 'private',
+        userId: 'owner-1',
+        workspaceId: 'workspace-1',
+      }),
+    );
+    expect(mockSearchHistory).toHaveBeenCalledWith({
+      agentId: 'agent-other',
+      limitPerType: 5,
+      query: 'Pulse',
+      type: 'topic',
+    });
+  });
+
+  it('keeps personal mode and does not add a current-agent filter', async () => {
+    mockSearchHistory.mockResolvedValue([
+      {
+        agentId: 'other-agent',
+        content: 'Railway runbook',
+        groupId: null,
+        id: 'message-1',
+        title: 'Railway runbook',
+        topicId: 'topic-1',
+        type: 'message',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      },
+    ]);
+
+    const result = await createRuntime().searchMessages({ limit: 2, query: 'Railway' });
+
+    expect(result.success).toBe(true);
+    expect(JSON.parse(result.content).results[0].url).toBe('/agent/other-agent/topic-1#message-1');
+    expect(mockCreateFtsSearchRepo).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'owner-1', workspaceId: undefined }),
+    );
+    expect(mockSearchHistory).toHaveBeenCalledWith({
+      agentId: undefined,
+      limitPerType: 2,
+      query: 'Railway',
+      type: 'message',
+    });
+  });
+
+  it('cannot replace trusted identity with model-supplied scope arguments', async () => {
+    mockSearchHistory.mockResolvedValue([]);
+    await createRuntime('workspace-1').searchTopics({
+      query: 'Pulse',
+      userId: 'other-owner',
+      workspaceId: 'other-workspace',
+    });
+
+    expect(mockCreateFtsSearchRepo).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'owner-1', workspaceId: 'workspace-1' }),
+    );
+    expect(mockSearchHistory).toHaveBeenCalledWith({
+      agentId: undefined,
+      limitPerType: 5,
+      query: 'Pulse',
+      type: 'topic',
+    });
+  });
+
+  it('returns failure when the configured provider cannot be created', async () => {
+    mockCreateFtsSearchRepo.mockRejectedValue(new Error('Provider unavailable'));
+    const result = await createRuntime().searchTopics({ query: 'Pulse' });
+    expect(result.success).toBe(false);
+    expect(result.content).toContain('Provider unavailable');
+    expect(mockSearchHistory).not.toHaveBeenCalled();
+  });
+});
 
 describe('topicReferenceRuntime', () => {
   it('should have the correct identifier', () => {

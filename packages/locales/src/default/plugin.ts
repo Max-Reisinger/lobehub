@@ -578,6 +578,8 @@ export default {
   'builtins.lobe-web-onboarding.render.interests': 'Interests',
   'builtins.lobe-web-onboarding.title': 'User Onboarding',
   'builtins.lobe-topic-reference.apiName.getTopicContext': 'Get Topic Context',
+  'builtins.lobe-topic-reference.apiName.searchMessages': 'Search Conversation Messages',
+  'builtins.lobe-topic-reference.apiName.searchTopics': 'Search Conversation Topics',
   'builtins.lobe-topic-reference.title': 'Topic Reference',
   'confirm': 'Confirm',
   'debug.arguments': 'Arguments',

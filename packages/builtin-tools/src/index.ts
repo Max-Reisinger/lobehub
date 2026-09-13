@@ -465,7 +465,6 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
     type: 'builtin',
   },
   {
-    discoverable: false,
     hidden: true,
     identifier: TopicReferenceManifest.identifier,
     manifest: TopicReferenceManifest,

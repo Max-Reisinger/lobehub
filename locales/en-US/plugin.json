@@ -522,6 +522,8 @@
   "builtins.lobe-task.verify.off": "Verify gate off",
   "builtins.lobe-task.verify.on": "Verify gate on",
   "builtins.lobe-topic-reference.apiName.getTopicContext": "Get Topic Context",
+  "builtins.lobe-topic-reference.apiName.searchMessages": "Search Conversation Messages",
+  "builtins.lobe-topic-reference.apiName.searchTopics": "Search Conversation Topics",
   "builtins.lobe-topic-reference.title": "Topic Reference",
   "builtins.lobe-user-interaction.apiName.askUserQuestion": "Ask user question",
   "builtins.lobe-user-interaction.apiName.cancelUserResponse": "Cancel user response",

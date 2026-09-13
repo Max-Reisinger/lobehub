@@ -522,6 +522,8 @@
   "builtins.lobe-task.verify.off": "验收门已关闭",
   "builtins.lobe-task.verify.on": "验收门已开启",
   "builtins.lobe-topic-reference.apiName.getTopicContext": "获取话题上下文",
+  "builtins.lobe-topic-reference.apiName.searchMessages": "搜索历史消息",
+  "builtins.lobe-topic-reference.apiName.searchTopics": "搜索历史话题",
   "builtins.lobe-topic-reference.title": "话题引用",
   "builtins.lobe-user-interaction.apiName.askUserQuestion": "询问用户问题",
   "builtins.lobe-user-interaction.apiName.cancelUserResponse": "取消用户响应",

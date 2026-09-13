@@ -1,11 +1,8 @@
 import type { BuiltinToolContext, BuiltinToolResult } from '@lobechat/types';
 import { BaseExecutor } from '@lobechat/types';
 
-import { TopicReferenceIdentifier } from '../types';
-
-const TopicReferenceApiName = {
-  getTopicContext: 'getTopicContext',
-} as const;
+import type { SearchHistoryParams } from '../types';
+import { TopicReferenceApiName, TopicReferenceIdentifier } from '../types';
 
 interface GetTopicContextParams {
   topicId: string;
@@ -13,6 +10,8 @@ interface GetTopicContextParams {
 
 interface TopicReferenceExecutionRuntime {
   getTopicContext: (params: GetTopicContextParams) => Promise<BuiltinToolResult>;
+  searchMessages: (params: SearchHistoryParams) => Promise<BuiltinToolResult>;
+  searchTopics: (params: SearchHistoryParams) => Promise<BuiltinToolResult>;
 }
 
 export class TopicReferenceExecutor extends BaseExecutor<typeof TopicReferenceApiName> {
@@ -31,4 +30,14 @@ export class TopicReferenceExecutor extends BaseExecutor<typeof TopicReferenceAp
   ): Promise<BuiltinToolResult> => {
     return this.runtime.getTopicContext(params);
   };
+
+  searchMessages = async (
+    params: SearchHistoryParams,
+    _ctx: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => this.runtime.searchMessages(params);
+
+  searchTopics = async (
+    params: SearchHistoryParams,
+    _ctx: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => this.runtime.searchTopics(params);
 }

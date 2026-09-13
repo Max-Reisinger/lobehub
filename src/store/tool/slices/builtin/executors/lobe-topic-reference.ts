@@ -1,3 +1,4 @@
+import { ConversationSearchRuntime } from '@lobechat/builtin-tool-topic-reference/executionRuntime';
 import { TopicReferenceExecutor } from '@lobechat/builtin-tool-topic-reference/executor';
 import type { BuiltinToolResult } from '@lobechat/types';
 
@@ -8,6 +9,19 @@ interface GetTopicContextParams {
 }
 
 class TopicReferenceExecutionRuntime {
+  private searchRuntime = new ConversationSearchRuntime(async (params) => {
+    const results = await lambdaClient.search.query.query({
+      ...params,
+      includeMarketplace: false,
+    });
+
+    return results.filter((item) => item.type === 'topic' || item.type === 'message');
+  });
+
+  searchMessages = this.searchRuntime.searchMessages;
+
+  searchTopics = this.searchRuntime.searchTopics;
+
   getTopicContext = async (params: GetTopicContextParams): Promise<BuiltinToolResult> => {
     const { topicId } = params;
 
